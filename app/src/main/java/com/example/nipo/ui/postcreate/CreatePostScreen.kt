@@ -7,15 +7,37 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,7 +61,7 @@ private val LetterBg = Color(0xFFE3F2FD)
 @Composable
 fun CreatePostScreen(onDone: () -> Unit) {
     val context = LocalContext.current
-    val repository = remember { PostRepository() }
+    val repository = remember { PostRepository(context) }
     val placesClient = remember { Places.createClient(context) }
     val currentUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
@@ -50,6 +72,7 @@ fun CreatePostScreen(onDone: () -> Unit) {
     var placeName by remember { mutableStateOf<String?>(null) }
     var imageUri by remember { mutableStateOf<Uri?>(null) }
     var showMap by remember { mutableStateOf(false) }
+    var isPosting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val imagePicker = rememberLauncherForActivityResult(
@@ -59,7 +82,9 @@ fun CreatePostScreen(onDone: () -> Unit) {
     if (showMap) {
         MapPickerScreen(
             placesClient = placesClient,
-            onLocationPicked = { latLng, name -> pickedLatLng = latLng; placeName = name; showMap = false },
+            onLocationPicked = { latLng, name ->
+                pickedLatLng = latLng; placeName = name; showMap = false
+            },
             onCancel = { showMap = false }
         )
         return
@@ -104,7 +129,9 @@ fun CreatePostScreen(onDone: () -> Unit) {
 
         // ★ 大きな2択スイッチ
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             LabelSelectButton(
@@ -139,7 +166,10 @@ fun CreatePostScreen(onDone: () -> Unit) {
             imageUri?.let {
                 AsyncImage(
                     model = it, contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().height(160.dp).padding(top = 8.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .padding(top = 8.dp)
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -151,6 +181,7 @@ fun CreatePostScreen(onDone: () -> Unit) {
 
             Button(
                 onClick = {
+                    isPosting = true
                     val geo = pickedLatLng?.let { GeoPoint(it.latitude, it.longitude) }
                     scope.launch {
                         repository.createPost(
@@ -160,13 +191,26 @@ fun CreatePostScreen(onDone: () -> Unit) {
                             ),
                             imageUri
                         )
+                        isPosting = false
                         onDone()
                     }
                 },
-                enabled = title.isNotBlank() && pickedLatLng != null,
+                enabled = title.isNotBlank() && pickedLatLng != null && !isPosting,
                 colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                modifier = Modifier.fillMaxWidth().height(50.dp)
-            ) { Text("投稿する", color = Color.White) }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+            ) {
+                if (isPosting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("投稿する", color = Color.White)
+                }
+            }
 
             Spacer(Modifier.height(24.dp))
         }
@@ -182,7 +226,9 @@ private fun LabelSelectButton(
     onClick: () -> Unit
 ) {
     Surface(
-        modifier = modifier.height(56.dp).clickable(onClick = onClick),
+        modifier = modifier
+            .height(56.dp)
+            .clickable(onClick = onClick),
         color = if (selected) color else Color.White,
         contentColor = if (selected) Color.White else color,
         shape = RoundedCornerShape(12.dp),
