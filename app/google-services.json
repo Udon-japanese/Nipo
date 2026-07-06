@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "858388256208",
+    "project_id": "nipo-2c069",
+    "storage_bucket": "nipo-2c069.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:858388256208:android:f6d01487ee87ef44e615d5",
+        "android_client_info": {
+          "package_name": "com.example.nipo"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "858388256208-i605b7rp10mc599v0fpmtvpuur9l4uk4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAXDVqVLpqzd1w2aLTrgcoEbkDvl3EeYWE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "858388256208-i605b7rp10mc599v0fpmtvpuur9l4uk4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
