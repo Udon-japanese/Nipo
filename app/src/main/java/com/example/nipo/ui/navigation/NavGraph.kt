@@ -3,81 +3,100 @@ package com.example.nipo.ui.navigation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
+import com.example.nipo.ui.auth.NicknameScreen
+import com.example.nipo.ui.common.BottomTabBar
+import com.example.nipo.ui.common.BottomTabItem
+import com.example.nipo.ui.home.HomeScreen
 import com.example.nipo.ui.login.LoginScreen
+import com.example.nipo.ui.permission.LocationPermissionScreen
 import com.example.nipo.ui.postcreate.CreatePostScreen
+import com.example.nipo.ui.postcreate.MapPickerScreen
 import com.example.nipo.ui.postdetail.PostDetailScreen
-import com.example.nipo.ui.postlist.PostListScreen
 import com.example.nipo.ui.settings.SettingsScreen
-import com.google.firebase.auth.FirebaseAuth
-
-private data class BottomTab(
-    val route: String,
-    val label: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector
-)
-
-private val bottomTabs = listOf(
-    BottomTab("home", "ホーム", Icons.Default.Home),
-    BottomTab("settings", "設定", Icons.Default.Settings)
-)
+import com.example.nipo.ui.splash.SplashDestination
+import com.example.nipo.ui.splash.SplashScreen
+import com.google.android.libraries.places.api.Places
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.remember
 
 @Composable
 fun AppNavGraph(navController: NavHostController) {
-    val startDestination =
-        if (FirebaseAuth.getInstance().currentUser != null) "home" else "login"
-
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = currentRoute == "home" || currentRoute == "settings"
+    val context = LocalContext.current
+    val placesClient = remember { Places.createClient(context) }
 
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
-                    bottomTabs.forEach { tab ->
-                        NavigationBarItem(
-                            selected = currentRoute == tab.route,
+                BottomTabBar(
+                    items = listOf(
+                        BottomTabItem(
+                            label = "ホーム",
+                            icon = Icons.Default.Home,
+                            selected = currentRoute == "home",
                             onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
+                                navController.navigate("home") {
+                                    popUpTo("home") { inclusive = true }
                                 }
                             },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) }
-                        )
-                    }
-                }
+                        ),
+                        BottomTabItem(
+                            label = "マイページ",
+                            icon = Icons.Default.Person,
+                            selected = currentRoute == "settings",
+                            onClick = { navController.navigate("settings") },
+                        ),
+                    )
+                )
             }
         }
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = startDestination,
+            startDestination = "splash",
             modifier = Modifier.padding(padding)
         ) {
+            composable("splash") {
+                SplashScreen(onResolved = { destination ->
+                    val route = when (destination) {
+                        SplashDestination.LocationPermission -> "locationPermission"
+                        SplashDestination.Login -> "login"
+                        SplashDestination.Nickname -> "nickname"
+                        SplashDestination.Home -> "home"
+                    }
+                    navController.navigate(route) { popUpTo("splash") { inclusive = true } }
+                })
+            }
+            composable("locationPermission") {
+                LocationPermissionScreen(onFinished = {
+                    navController.navigate("login") { popUpTo("locationPermission") { inclusive = true } }
+                })
+            }
             composable("login") {
                 LoginScreen(onLoginSuccess = {
-                    navController.navigate("home") { popUpTo("login") { inclusive = true } }
+                    navController.navigate("nickname") { popUpTo("login") { inclusive = true } }
+                })
+            }
+            composable("nickname") {
+                NicknameScreen(onFinished = {
+                    navController.navigate("home") { popUpTo("nickname") { inclusive = true } }
                 })
             }
             composable("home") {
-                PostListScreen(
+                HomeScreen(
                     onCreatePost = { navController.navigate("createPost") },
                     onOpenPost = { postId -> navController.navigate("postDetail/$postId") }
                 )
@@ -88,14 +107,47 @@ fun AppNavGraph(navController: NavHostController) {
                 })
             }
             composable("createPost") {
-                CreatePostScreen(onDone = { navController.popBackStack() })
+                CreatePostScreen(
+                    onDone = { navController.popBackStack() },
+                    onPickLocation = { navController.navigate("mapPicker") },
+                    navController = navController,
+                )
+            }
+            composable(
+                "editPost/{postId}",
+                arguments = listOf(navArgument("postId") { type = NavType.StringType })
+            ) { backStackEntry3 ->
+                val postId = backStackEntry3.arguments?.getString("postId") ?: return@composable
+                CreatePostScreen(
+                    onDone = { navController.popBackStack() },
+                    onPickLocation = { navController.navigate("mapPicker") },
+                    navController = navController,
+                    editingPostId = postId,
+                )
+            }
+            composable("mapPicker") {
+                MapPickerScreen(
+                    placesClient = placesClient,
+                    onLocationPicked = { latLng, name ->
+                        navController.previousBackStackEntry?.savedStateHandle?.set("pickedLat", latLng.latitude)
+                        navController.previousBackStackEntry?.savedStateHandle?.set("pickedLng", latLng.longitude)
+                        navController.previousBackStackEntry?.savedStateHandle?.set("pickedPlaceName", name)
+                        navController.popBackStack()
+                    },
+                    onCancel = { navController.popBackStack() },
+                )
             }
             composable(
                 "postDetail/{postId}",
                 arguments = listOf(navArgument("postId") { type = NavType.StringType })
             ) { backStackEntry2 ->
                 val postId = backStackEntry2.arguments?.getString("postId") ?: return@composable
-                PostDetailScreen(postId = postId)
+                PostDetailScreen(
+                    postId = postId,
+                    onBack = { navController.popBackStack() },
+                    onEdit = { navController.navigate("editPost/$postId") },
+                    onDeleted = { navController.popBackStack() },
+                )
             }
         }
     }

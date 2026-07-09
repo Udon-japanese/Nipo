@@ -6,6 +6,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.core.graphics.scale
 import com.google.firebase.Firebase
+import com.google.firebase.Timestamp
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.firestore
 import com.google.firebase.firestore.snapshots
@@ -21,15 +23,45 @@ class PostRepository(private val context: Context) {
 
     suspend fun getPost(postId: String): Post? = try {
         db.collection("posts").document(postId).get().await().toObject(Post::class.java)
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         null
     }
 
-    suspend fun createPost(post: Post, imageUri: Uri?): Result<Unit> = try {
-        val photoUrl = imageUri?.let { uploadImage(it, "post_images") }
+    suspend fun createPost(post: Post, imageUris: List<Uri>): Result<Unit> = try {
+        val photoUrls = imageUris.map { uploadImage(it, "post_images") }
         val docRef = db.collection("posts").document()
-        val data = post.copy(id = docRef.id, photoUrl = photoUrl)
+        val data = post.copy(id = docRef.id, photoUrls = photoUrls, createdAt = Timestamp.now())
         docRef.set(data).await()
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    suspend fun updatePost(postId: String, post: Post, newImageUris: List<Uri>): Result<Unit> = try {
+        val photoUrls = if (newImageUris.isEmpty()) post.photoUrls else newImageUris.map { uploadImage(it, "post_images") }
+        val docRef = db.collection("posts").document(postId)
+        docRef.set(post.copy(id = postId, photoUrls = photoUrls)).await()
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    suspend fun deletePost(postId: String): Result<Unit> = try {
+        db.collection("posts").document(postId).delete().await()
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    suspend fun reactGood(postId: String): Result<Unit> = try {
+        db.collection("posts").document(postId).update("goodCount", FieldValue.increment(1)).await()
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    suspend fun reactBad(postId: String): Result<Unit> = try {
+        db.collection("posts").document(postId).update("badCount", FieldValue.increment(1)).await()
         Result.success(Unit)
     } catch (e: Exception) {
         Result.failure(e)
@@ -38,7 +70,7 @@ class PostRepository(private val context: Context) {
     suspend fun addComment(postId: String, comment: Comment, imageUri: Uri?): Result<Unit> = try {
         val photoUrl = imageUri?.let { uploadImage(it, "comment_images") }
         val docRef = db.collection("posts").document(postId).collection("comments").document()
-        docRef.set(comment.copy(id = docRef.id, photoUrl = photoUrl)).await()
+        docRef.set(comment.copy(id = docRef.id, photoUrl = photoUrl, createdAt = Timestamp.now())).await()
         Result.success(Unit)
     } catch (e: Exception) {
         Result.failure(e)

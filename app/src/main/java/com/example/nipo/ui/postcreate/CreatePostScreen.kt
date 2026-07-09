@@ -3,240 +3,206 @@ package com.example.nipo.ui.postcreate
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import androidx.navigation.NavHostController
 import com.example.nipo.data.Post
-import com.example.nipo.data.PostLabel
 import com.example.nipo.data.PostRepository
+import com.example.nipo.data.PostTag
+import com.example.nipo.ui.common.AppTopBar
+import com.example.nipo.ui.common.NipoTextField
+import com.example.nipo.ui.common.PhotoSlotGrid
+import com.example.nipo.ui.common.PrimaryButton
+import com.example.nipo.ui.common.TagChipGroup
+import com.example.nipo.ui.theme.NipoMode
+import com.example.nipo.ui.theme.NipoModeProvider
+import com.example.nipo.ui.theme.TipsBg
+import com.example.nipo.ui.theme.TipsBorder
+import com.example.nipo.ui.theme.TipsCard
+import com.example.nipo.ui.theme.TipsMutedText
 import com.google.android.gms.maps.model.LatLng
-import com.google.android.libraries.places.api.Places
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.GeoPoint
 import kotlinx.coroutines.launch
 
-private val TroubledAccent = Color(0xFFE53935)
-private val TroubledBg = Color(0xFFFFEBEE)
-private val LetterAccent = Color(0xFF1E88E5)
-private val LetterBg = Color(0xFFE3F2FD)
-
 @Composable
-fun CreatePostScreen(onDone: () -> Unit) {
+fun CreatePostScreen(
+    onDone: () -> Unit,
+    onPickLocation: () -> Unit,
+    navController: NavHostController,
+    editingPostId: String? = null,
+) {
     val context = LocalContext.current
     val repository = remember { PostRepository(context) }
-    val placesClient = remember { Places.createClient(context) }
     val currentUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+    val isEditMode = editingPostId != null
 
     var title by remember { mutableStateOf("") }
     var detail by remember { mutableStateOf("") }
-    var label by remember { mutableStateOf(PostLabel.TROUBLED) }
+    var selectedTag by remember { mutableStateOf<PostTag?>(null) }
     var pickedLatLng by remember { mutableStateOf<LatLng?>(null) }
     var placeName by remember { mutableStateOf<String?>(null) }
-    var imageUri by remember { mutableStateOf<Uri?>(null) }
-    var showMap by remember { mutableStateOf(false) }
+    var existingPhotoUrls by remember { mutableStateOf<List<String>>(emptyList()) }
+    var existingCreatedAt by remember { mutableStateOf<com.google.firebase.Timestamp?>(null) }
+    var imageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var isPosting by remember { mutableStateOf(false) }
+    var isSealing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(editingPostId) {
+        if (editingPostId != null) {
+            repository.getPost(editingPostId)?.let { existing ->
+                title = existing.title
+                detail = existing.locationDetail
+                selectedTag = runCatching { PostTag.valueOf(existing.label) }.getOrNull()
+                placeName = existing.placeName
+                existing.geo?.let { pickedLatLng = LatLng(it.latitude, it.longitude) }
+                existingPhotoUrls = existing.photoUrls
+                existingCreatedAt = existing.createdAt
+            }
+        }
+    }
+
+    val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
+    LaunchedEffect(savedStateHandle) {
+        savedStateHandle?.getStateFlow<Double?>("pickedLat", null)?.collect { lat ->
+            if (lat == null) return@collect
+            val lng = savedStateHandle.get<Double>("pickedLng") ?: return@collect
+            pickedLatLng = LatLng(lat, lng)
+            placeName = savedStateHandle.get<String>("pickedPlaceName")
+        }
+    }
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
-    ) { uri -> imageUri = uri }
+    ) { uri -> uri?.let { if (imageUris.size < 3) imageUris = imageUris + it } }
 
-    if (showMap) {
-        MapPickerScreen(
-            placesClient = placesClient,
-            onLocationPicked = { latLng, name ->
-                pickedLatLng = latLng; placeName = name; showMap = false
-            },
-            onCancel = { showMap = false }
-        )
-        return
-    }
-
-    val accentColor by animateColorAsState(
-        targetValue = if (label == PostLabel.TROUBLED) TroubledAccent else LetterAccent,
-        label = "accentColor"
-    )
-    val bgColor by animateColorAsState(
-        targetValue = if (label == PostLabel.TROUBLED) TroubledBg else LetterBg,
-        label = "bgColor"
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor)
-            .verticalScroll(rememberScrollState())
-    ) {
-        // ★ 画面上部の帯 — 今どちらを投稿しようとしているか一目で分かる
-        Row(
+    NipoModeProvider(NipoMode.Tips) {
+        Box(Modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(accentColor)
-                .padding(vertical = 20.dp, horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .background(TipsBg)
+                .verticalScroll(rememberScrollState())
         ) {
-            Icon(
-                imageVector = if (label == PostLabel.TROUBLED) Icons.Default.Warning else Icons.Default.Favorite,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(32.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = if (label == PostLabel.TROUBLED) "「困ってる」を投稿します" else "「未来への手紙」を投稿します",
-                color = Color.White,
-                style = MaterialTheme.typography.titleLarge
-            )
-        }
+            AppTopBar(title = if (isEditMode) "置き手紙を編集" else "置き手紙", onBack = onDone)
 
-        // ★ 大きな2択スイッチ
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            LabelSelectButton(
-                text = PostLabel.TROUBLED.displayName,
-                selected = label == PostLabel.TROUBLED,
-                color = TroubledAccent,
-                modifier = Modifier.weight(1f)
-            ) { label = PostLabel.TROUBLED }
-
-            LabelSelectButton(
-                text = PostLabel.LETTER_TO_FUTURE.displayName,
-                selected = label == PostLabel.LETTER_TO_FUTURE,
-                color = LetterAccent,
-                modifier = Modifier.weight(1f)
-            ) { label = PostLabel.LETTER_TO_FUTURE }
-        }
-
-        Column(Modifier.padding(horizontal = 16.dp)) {
-            OutlinedTextField(
-                value = title, onValueChange = { title = it },
-                label = { Text("タイトル") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = detail, onValueChange = { detail = it },
-                label = { Text("補足情報（例: 3階トイレ横）") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = { imagePicker.launch("image/*") }) { Text("写真を選択（任意）") }
-            imageUri?.let {
-                AsyncImage(
-                    model = it, contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .padding(top = 8.dp)
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = { showMap = true }) {
-                Text(if (pickedLatLng == null) "地図で場所を選ぶ" else "場所選択済み ✓ ${placeName ?: ""}")
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            Button(
-                onClick = {
-                    isPosting = true
-                    val geo = pickedLatLng?.let { GeoPoint(it.latitude, it.longitude) }
-                    scope.launch {
-                        repository.createPost(
-                            Post(
-                                title = title, label = label.name, locationDetail = detail,
-                                geo = geo, placeName = placeName, authorUid = currentUid
-                            ),
-                            imageUri
-                        )
-                        isPosting = false
-                        onDone()
-                    }
-                },
-                enabled = title.isNotBlank() && pickedLatLng != null && !isPosting,
-                colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+            Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .rotate(-0.4f)
+                    .shadow(elevation = 10.dp, shape = RoundedCornerShape(3.dp)),
+                color = TipsCard,
+                border = BorderStroke(1.dp, TipsBorder),
+                shape = RoundedCornerShape(3.dp),
             ) {
-                if (isPosting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
+                Column(Modifier.padding(22.dp)) {
+                    Text("場所", style = MaterialTheme.typography.labelMedium, color = TipsMutedText)
+                    Spacer(Modifier.height(8.dp))
+                    PrimaryButton(
+                        text = if (pickedLatLng == null) "地図で場所を選ぶ" else "場所選択済み ✓ ${placeName.orEmpty()}",
+                        onClick = onPickLocation,
                     )
-                } else {
-                    Text("投稿する", color = Color.White)
+
+                    Spacer(Modifier.height(16.dp))
+                    Text("タイトル", style = MaterialTheme.typography.labelMedium, color = TipsMutedText)
+                    Spacer(Modifier.height(8.dp))
+                    NipoTextField(value = title, onValueChange = { title = it }, placeholder = "例：3階トイレの前")
+
+                    Spacer(Modifier.height(16.dp))
+                    Text("タグを選択（任意）", style = MaterialTheme.typography.labelMedium, color = TipsMutedText)
+                    Spacer(Modifier.height(8.dp))
+                    TagChipGroup(
+                        options = PostTag.entries,
+                        selected = setOfNotNull(selectedTag),
+                        onToggle = { selectedTag = it },
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+                    Text("写真（最大3枚）", style = MaterialTheme.typography.labelMedium, color = TipsMutedText)
+                    if (isEditMode && imageUris.isEmpty() && existingPhotoUrls.isNotEmpty()) {
+                        Text(
+                            "新しい写真を選ぶと、既存の写真と差し替わります",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TipsMutedText,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    PhotoSlotGrid(
+                        photoUris = imageUris,
+                        maxSlots = 3,
+                        onAddPhoto = { imagePicker.launch("image/*") },
+                        onRemovePhoto = { index -> imageUris = imageUris.toMutableList().apply { removeAt(index) } },
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+                    Text("本文", style = MaterialTheme.typography.labelMedium, color = TipsMutedText)
+                    Spacer(Modifier.height(8.dp))
+                    NipoTextField(value = detail, onValueChange = { if (it.length <= 200) detail = it }, placeholder = "どんな情報を残しますか？", singleLine = false)
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
+            Column(Modifier.padding(horizontal = 14.dp)) {
+                Spacer(Modifier.height(10.dp))
+                PrimaryButton(
+                    text = if (isEditMode) "更新" else "ポストに投函",
+                    loading = isPosting,
+                    enabled = title.isNotBlank() && pickedLatLng != null && !isPosting,
+                    onClick = {
+                        isPosting = true
+                        val geo = pickedLatLng?.let { GeoPoint(it.latitude, it.longitude) }
+                        val post = Post(
+                            title = title,
+                            label = selectedTag?.name ?: "",
+                            locationDetail = detail,
+                            geo = geo,
+                            placeName = placeName,
+                            authorUid = currentUid,
+                            photoUrls = existingPhotoUrls,
+                            createdAt = existingCreatedAt,
+                        )
+                        scope.launch {
+                            if (editingPostId != null) {
+                                repository.updatePost(editingPostId, post, imageUris)
+                                isPosting = false
+                                onDone()
+                            } else {
+                                repository.createPost(post, imageUris)
+                                isPosting = false
+                                isSealing = true
+                            }
+                        }
+                    },
+                )
+                Spacer(Modifier.height(24.dp))
+            }
         }
-    }
-}
 
-@Composable
-private fun LabelSelectButton(
-    text: String,
-    selected: Boolean,
-    color: Color,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = modifier
-            .height(56.dp)
-            .clickable(onClick = onClick),
-        color = if (selected) color else Color.White,
-        contentColor = if (selected) Color.White else color,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(2.dp, color),
-        tonalElevation = if (selected) 4.dp else 0.dp
-    ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-            Text(text, style = MaterialTheme.typography.titleMedium)
+        TipsSealOverlay(visible = isSealing, onFinished = onDone)
         }
     }
 }
