@@ -1,22 +1,23 @@
 package com.example.nipo.ui.navigation
 
-import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.example.nipo.ui.auth.NicknameScreen
-import com.example.nipo.ui.common.BottomTabBar
 import com.example.nipo.ui.common.BottomTabItem
+import com.example.nipo.ui.common.ScreenWithTabBar
 import com.example.nipo.ui.filter.FilterScreen
 import com.example.nipo.ui.home.HomeScreen
 import com.example.nipo.ui.login.LoginScreen
@@ -36,46 +37,41 @@ import androidx.compose.runtime.remember
 
 @Composable
 fun AppNavGraph(navController: NavHostController) {
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = currentRoute == "home" || currentRoute == "myPage"
     val context = LocalContext.current
     val placesClient = remember { Places.createClient(context) }
 
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                BottomTabBar(
-                    items = listOf(
-                        BottomTabItem(
-                            label = "ホーム",
-                            icon = Icons.Default.Home,
-                            selected = currentRoute == "home",
-                            onClick = {
-                                navController.navigate("home") {
-                                    popUpTo("home") { inclusive = true }
-                                }
-                            },
-                        ),
-                        BottomTabItem(
-                            label = "マイページ",
-                            icon = Icons.Default.Person,
-                            selected = currentRoute == "myPage",
-                            onClick = {
-                                navController.navigate("myPage") {
-                                    popUpTo("home")
-                                }
-                            },
-                        ),
-                    )
-                )
-            }
-        }
-    ) { padding ->
+    fun tabItems(currentRoute: String?) = listOf(
+        BottomTabItem(
+            label = "ホーム",
+            icon = Icons.Default.Home,
+            selected = currentRoute == "home",
+            onClick = {
+                navController.navigate("home") {
+                    popUpTo("home") { inclusive = true }
+                }
+            },
+        ),
+        BottomTabItem(
+            label = "マイページ",
+            icon = Icons.Default.Person,
+            selected = currentRoute == "myPage",
+            onClick = {
+                navController.navigate("myPage") {
+                    popUpTo("home")
+                }
+            },
+        ),
+    )
+
+    Box(Modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
             startDestination = "splash",
-            modifier = Modifier.padding(padding)
+            modifier = Modifier.fillMaxSize(),
+            enterTransition = { fadeIn(animationSpec = tween(220)) },
+            exitTransition = { fadeOut(animationSpec = tween(220)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(220)) },
+            popExitTransition = { fadeOut(animationSpec = tween(220)) },
         ) {
             composable("splash") {
                 SplashScreen(onResolved = { destination ->
@@ -104,14 +100,16 @@ fun AppNavGraph(navController: NavHostController) {
                 })
             }
             composable("home") {
-                HomeScreen(
-                    onCreatePost = { navController.navigate("createPost") },
-                    onOpenPost = { postId -> navController.navigate("postDetail/$postId") },
-                    onCreateSos = { navController.navigate("createSos") },
-                    onOpenSos = { sosId -> navController.navigate("sosDetail/$sosId") },
-                    onOpenFilter = { navController.navigate("filter") },
-                    navController = navController,
-                )
+                ScreenWithTabBar(tabItems = tabItems("home")) {
+                    HomeScreen(
+                        onCreatePost = { navController.navigate("createPost") },
+                        onOpenPost = { postId -> navController.navigate("postDetail/$postId") },
+                        onCreateSos = { navController.navigate("createSos") },
+                        onOpenSos = { sosId -> navController.navigate("sosDetail/$sosId") },
+                        onOpenFilter = { navController.navigate("filter") },
+                        navController = navController,
+                    )
+                }
             }
             composable("filter") {
                 FilterScreen(
@@ -120,14 +118,16 @@ fun AppNavGraph(navController: NavHostController) {
                 )
             }
             composable("myPage") {
-                MyPageScreen(
-                    onOpenSettings = { navController.navigate("settings") },
-                    onLoggedOut = {
-                        navController.navigate("login") { popUpTo(0) { inclusive = true } }
-                    },
-                    onOpenPost = { postId -> navController.navigate("postDetail/$postId") },
-                    onOpenSos = { sosId -> navController.navigate("sosDetail/$sosId") },
-                )
+                ScreenWithTabBar(tabItems = tabItems("myPage")) {
+                    MyPageScreen(
+                        onOpenSettings = { navController.navigate("settings") },
+                        onLoggedOut = {
+                            navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                        },
+                        onOpenPost = { postId -> navController.navigate("postDetail/$postId") },
+                        onOpenSos = { sosId -> navController.navigate("sosDetail/$sosId") },
+                    )
+                }
             }
             composable("settings") {
                 SettingsScreen(
