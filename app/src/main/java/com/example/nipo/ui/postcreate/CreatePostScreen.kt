@@ -139,7 +139,7 @@ fun CreatePostScreen(
                     TagChipGroup(
                         options = PostTag.entries,
                         selected = setOfNotNull(selectedTag),
-                        onToggle = { selectedTag = it },
+                        onToggle = { selectedTag = if (selectedTag == it) null else it },
                     )
 
                     Spacer(Modifier.height(16.dp))

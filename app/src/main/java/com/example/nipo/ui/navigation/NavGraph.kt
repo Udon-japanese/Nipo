@@ -24,6 +24,8 @@ import com.example.nipo.ui.postcreate.CreatePostScreen
 import com.example.nipo.ui.postcreate.MapPickerScreen
 import com.example.nipo.ui.postdetail.PostDetailScreen
 import com.example.nipo.ui.settings.SettingsScreen
+import com.example.nipo.ui.soscreate.CreateSosScreen
+import com.example.nipo.ui.sosdetail.SosDetailScreen
 import com.example.nipo.ui.splash.SplashDestination
 import com.example.nipo.ui.splash.SplashScreen
 import com.google.android.libraries.places.api.Places
@@ -98,7 +100,10 @@ fun AppNavGraph(navController: NavHostController) {
             composable("home") {
                 HomeScreen(
                     onCreatePost = { navController.navigate("createPost") },
-                    onOpenPost = { postId -> navController.navigate("postDetail/$postId") }
+                    onOpenPost = { postId -> navController.navigate("postDetail/$postId") },
+                    onCreateSos = { navController.navigate("createSos") },
+                    onOpenSos = { sosId -> navController.navigate("sosDetail/$sosId") },
+                    navController = navController,
                 )
             }
             composable("settings") {
@@ -144,9 +149,34 @@ fun AppNavGraph(navController: NavHostController) {
                 val postId = backStackEntry2.arguments?.getString("postId") ?: return@composable
                 PostDetailScreen(
                     postId = postId,
-                    onBack = { navController.popBackStack() },
+                    onBack = { post ->
+                        post?.geo?.let {
+                            navController.previousBackStackEntry?.savedStateHandle?.set("focusLat", it.latitude)
+                            navController.previousBackStackEntry?.savedStateHandle?.set("focusLng", it.longitude)
+                        }
+                        navController.popBackStack()
+                    },
                     onEdit = { navController.navigate("editPost/$postId") },
                     onDeleted = { navController.popBackStack() },
+                )
+            }
+            composable("createSos") {
+                CreateSosScreen(onDone = { navController.popBackStack() })
+            }
+            composable(
+                "sosDetail/{sosId}",
+                arguments = listOf(navArgument("sosId") { type = NavType.StringType })
+            ) { backStackEntry4 ->
+                val sosId = backStackEntry4.arguments?.getString("sosId") ?: return@composable
+                SosDetailScreen(
+                    sosId = sosId,
+                    onBack = { sos ->
+                        sos?.location?.let {
+                            navController.previousBackStackEntry?.savedStateHandle?.set("focusLat", it.latitude)
+                            navController.previousBackStackEntry?.savedStateHandle?.set("focusLng", it.longitude)
+                        }
+                        navController.popBackStack()
+                    },
                 )
             }
         }

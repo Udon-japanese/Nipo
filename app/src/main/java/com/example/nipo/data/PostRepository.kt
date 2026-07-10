@@ -1,10 +1,7 @@
 package com.example.nipo.data
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import androidx.core.graphics.scale
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldValue
@@ -14,8 +11,6 @@ import com.google.firebase.firestore.snapshots
 import com.google.firebase.storage.storage
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
-import java.io.ByteArrayOutputStream
-import java.util.UUID
 
 class PostRepository(private val context: Context) {
     private val db = Firebase.firestore
@@ -53,18 +48,44 @@ class PostRepository(private val context: Context) {
         Result.failure(e)
     }
 
-    suspend fun reactGood(postId: String): Result<Unit> = try {
-        db.collection("posts").document(postId).update("goodCount", FieldValue.increment(1)).await()
+    /**
+     * Sets (or clears, when [reaction] is null) the calling user's single reaction on a post.
+     * Toggling to the same reaction clears it; switching from one to the other flips both counters
+     * in one transaction. [reaction] must be "good", "bad", or null.
+     */
+    suspend fun setReaction(postId: String, uid: String, reaction: String?): Result<Unit> = try {
+        val postRef = db.collection("posts").document(postId)
+        val reactionRef = postRef.collection("reactions").document(uid)
+        db.runTransaction { tx ->
+            val existing = tx.get(reactionRef)
+            val previous = if (existing.exists()) existing.getString("type") else null
+
+            var goodDelta = 0L
+            var badDelta = 0L
+            if (previous == "good") goodDelta -= 1
+            if (previous == "bad") badDelta -= 1
+            if (reaction == "good") goodDelta += 1
+            if (reaction == "bad") badDelta += 1
+
+            if (reaction == null) {
+                tx.delete(reactionRef)
+            } else {
+                tx.set(reactionRef, mapOf("type" to reaction))
+            }
+            if (goodDelta != 0L) tx.update(postRef, "goodCount", FieldValue.increment(goodDelta))
+            if (badDelta != 0L) tx.update(postRef, "badCount", FieldValue.increment(badDelta))
+            null
+        }.await()
         Result.success(Unit)
     } catch (e: Exception) {
         Result.failure(e)
     }
 
-    suspend fun reactBad(postId: String): Result<Unit> = try {
-        db.collection("posts").document(postId).update("badCount", FieldValue.increment(1)).await()
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
+    suspend fun getUserReaction(postId: String, uid: String): String? = try {
+        db.collection("posts").document(postId).collection("reactions").document(uid)
+            .get().await().getString("type")
+    } catch (_: Exception) {
+        null
     }
 
     suspend fun addComment(postId: String, comment: Comment, imageUri: Uri?): Result<Unit> = try {
@@ -85,31 +106,6 @@ class PostRepository(private val context: Context) {
             .orderBy("createdAt", Query.Direction.ASCENDING).snapshots()
             .map { it.toObjects(Comment::class.java) }
 
-    private suspend fun uploadImage(uri: Uri, folder: String): String {
-        val compressed = compressImage(uri)
-        val ref = storage.reference.child("$folder/${UUID.randomUUID()}.jpg")
-        ref.putBytes(compressed).await()
-        return ref.downloadUrl.await().toString()
-    }
-
-    private fun compressImage(uri: Uri): ByteArray {
-        val inputStream = context.contentResolver.openInputStream(uri)
-        val original = BitmapFactory.decodeStream(inputStream)
-        inputStream?.close()
-
-        // 長辺を1280pxに縮小（表示用途としては十分な解像度）
-        val maxDimension = 1280
-        val ratio = minOf(
-            maxDimension.toFloat() / original.width,
-            maxDimension.toFloat() / original.height,
-            1f // 元が小さい場合は拡大しない
-        )
-        val resized = if (ratio < 1f) {
-            original.scale((original.width * ratio).toInt(), (original.height * ratio).toInt())
-        } else original
-
-        val outputStream = ByteArrayOutputStream()
-        resized.compress(Bitmap.CompressFormat.JPEG, 80, outputStream) // 品質80%
-        return outputStream.toByteArray()
-    }
+    private suspend fun uploadImage(uri: Uri, folder: String): String =
+        ImageUploadUtil.uploadImage(storage, context, uri, folder)
 }

@@ -12,9 +12,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -51,7 +51,6 @@ import com.example.nipo.ui.common.PostPhotoCarousel
 import com.example.nipo.ui.common.TagChip
 import com.example.nipo.ui.common.WaxSeal
 import com.example.nipo.ui.common.formatRelativeTime
-import com.example.nipo.ui.theme.NeutralText
 import com.example.nipo.ui.theme.NipoMode
 import com.example.nipo.ui.theme.NipoModeProvider
 import com.example.nipo.ui.theme.TipsAccent
@@ -71,7 +70,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun PostDetailScreen(
     postId: String,
-    onBack: () -> Unit,
+    onBack: (Post?) -> Unit,
     onEdit: () -> Unit,
     onDeleted: () -> Unit,
 ) {
@@ -84,9 +83,11 @@ fun PostDetailScreen(
     var post by remember { mutableStateOf<Post?>(null) }
     var sendError by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var myReaction by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(postId) {
         post = repository.getPost(postId)
+        myReaction = repository.getUserReaction(postId, currentUid)
     }
 
     LaunchedEffect(postId) {
@@ -99,10 +100,15 @@ fun PostDetailScreen(
                 .fillMaxSize()
                 .background(TipsBg)
         ) {
-            AppTopBar(title = "", onBack = onBack)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+            ) {
+            AppTopBar(title = "", onBack = { onBack(post) })
             post?.let { p ->
                 val tag = runCatching { PostTag.valueOf(p.label) }.getOrNull()
-                Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Box(modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 2.dp, bottom = 8.dp)) {
                     LetterCard {
                         PostPhotoCarousel(photoUrls = p.photoUrls)
                         Spacer(Modifier.height(12.dp))
@@ -149,18 +155,34 @@ fun PostDetailScreen(
                         }
                         DashedDivider()
                         Spacer(Modifier.height(14.dp))
-                        ReactionRow(
-                            goodCount = p.goodCount,
-                            badCount = p.badCount,
-                            onReactGood = {
-                                post = p.copy(goodCount = p.goodCount + 1)
-                                scope.launch { repository.reactGood(postId) }
-                            },
-                            onReactBad = {
-                                post = p.copy(badCount = p.badCount + 1)
-                                scope.launch { repository.reactBad(postId) }
-                            },
-                        )
+                        if (p.authorUid != currentUid) {
+                            ReactionRow(
+                                goodCount = p.goodCount,
+                                badCount = p.badCount,
+                                selected = myReaction,
+                                onReactGood = {
+                                    val next = if (myReaction == "good") null else "good"
+                                    val prev = myReaction
+                                    myReaction = next
+                                    post = p.copy(
+                                        goodCount = p.goodCount + (if (next == "good") 1 else 0) - (if (prev == "good") 1 else 0),
+                                        badCount = p.badCount - (if (prev == "bad") 1 else 0),
+                                    )
+                                    scope.launch { repository.setReaction(postId, currentUid, next) }
+                                },
+                                onReactBad = {
+                                    val next = if (myReaction == "bad") null else "bad"
+                                    val prev = myReaction
+                                    myReaction = next
+                                    post = p.copy(
+                                        badCount = p.badCount + (if (next == "bad") 1 else 0) - (if (prev == "bad") 1 else 0),
+                                        goodCount = p.goodCount - (if (prev == "good") 1 else 0),
+                                    )
+                                    scope.launch { repository.setReaction(postId, currentUid, next) }
+                                },
+                            )
+                            Spacer(Modifier.height(4.dp))
+                        }
                         if (p.authorUid == currentUid) {
                             Spacer(Modifier.height(12.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -185,6 +207,7 @@ fun PostDetailScreen(
                     )
                 }
             }
+            Spacer(Modifier.height(24.dp))
             Text(
                 "コメント",
                 style = MaterialTheme.typography.labelLarge,
@@ -192,12 +215,9 @@ fun PostDetailScreen(
                 modifier = Modifier.padding(horizontal = 14.dp),
             )
             Spacer(Modifier.height(10.dp))
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 14.dp),
-            ) {
-                items(comments) { comment ->
+            Column(modifier = Modifier.padding(horizontal = 14.dp)) {
+                comments.forEach { comment ->
+                    val isAuthor = post?.authorUid != null && comment.authorUid == post?.authorUid
                     Surface(
                         color = Color(0xFFF5EDD8),
                         shape = RoundedCornerShape(6.dp),
@@ -205,17 +225,31 @@ fun PostDetailScreen(
                             .fillMaxWidth()
                             .padding(bottom = 10.dp),
                     ) {
-                        Text(
-                            buildAnnotatedString {
-                                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("匿名") }
-                                append("　${comment.text}")
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = NeutralText,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        )
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                            if (isAuthor) {
+                                Surface(color = TipsAccent, shape = RoundedCornerShape(4.dp)) {
+                                    Text(
+                                        "投稿者",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    )
+                                }
+                                Spacer(Modifier.height(4.dp))
+                            }
+                            Text(
+                                buildAnnotatedString {
+                                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("匿名") }
+                                    append("　${comment.text}")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF4A3A22),
+                            )
+                        }
                     }
                 }
+                Spacer(Modifier.height(4.dp))
+            }
             }
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -226,6 +260,7 @@ fun PostDetailScreen(
                     onValueChange = { text = it },
                     placeholder = "コメントを追加",
                     modifier = Modifier.weight(1f),
+                    containerColor = Color(0xFFFFFDF5),
                 )
                 Spacer(Modifier.width(8.dp))
                 Button(
