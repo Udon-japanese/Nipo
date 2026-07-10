@@ -190,6 +190,16 @@ fun AppNavGraph(navController: NavHostController) {
                 CreateSosScreen(onDone = { navController.popBackStack() })
             }
             composable(
+                "editSos/{sosId}",
+                arguments = listOf(navArgument("sosId") { type = NavType.StringType })
+            ) { backStackEntry5 ->
+                val sosId = backStackEntry5.arguments?.getString("sosId") ?: return@composable
+                CreateSosScreen(
+                    onDone = { navController.popBackStack() },
+                    editingSosId = sosId,
+                )
+            }
+            composable(
                 "sosDetail/{sosId}",
                 arguments = listOf(navArgument("sosId") { type = NavType.StringType })
             ) { backStackEntry4 ->
@@ -203,6 +213,8 @@ fun AppNavGraph(navController: NavHostController) {
                         }
                         navController.popBackStack()
                     },
+                    onEdit = { navController.navigate("editSos/$sosId") },
+                    onDeleted = { navController.popBackStack() },
                 )
             }
         }
