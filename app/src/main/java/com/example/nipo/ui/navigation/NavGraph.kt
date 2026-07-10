@@ -17,8 +17,10 @@ import androidx.navigation.navArgument
 import com.example.nipo.ui.auth.NicknameScreen
 import com.example.nipo.ui.common.BottomTabBar
 import com.example.nipo.ui.common.BottomTabItem
+import com.example.nipo.ui.filter.FilterScreen
 import com.example.nipo.ui.home.HomeScreen
 import com.example.nipo.ui.login.LoginScreen
+import com.example.nipo.ui.mypage.MyPageScreen
 import com.example.nipo.ui.permission.LocationPermissionScreen
 import com.example.nipo.ui.postcreate.CreatePostScreen
 import com.example.nipo.ui.postcreate.MapPickerScreen
@@ -36,7 +38,7 @@ import androidx.compose.runtime.remember
 fun AppNavGraph(navController: NavHostController) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = currentRoute == "home" || currentRoute == "settings"
+    val showBottomBar = currentRoute == "home" || currentRoute == "myPage"
     val context = LocalContext.current
     val placesClient = remember { Places.createClient(context) }
 
@@ -58,8 +60,12 @@ fun AppNavGraph(navController: NavHostController) {
                         BottomTabItem(
                             label = "マイページ",
                             icon = Icons.Default.Person,
-                            selected = currentRoute == "settings",
-                            onClick = { navController.navigate("settings") },
+                            selected = currentRoute == "myPage",
+                            onClick = {
+                                navController.navigate("myPage") {
+                                    popUpTo("home")
+                                }
+                            },
                         ),
                     )
                 )
@@ -103,13 +109,33 @@ fun AppNavGraph(navController: NavHostController) {
                     onOpenPost = { postId -> navController.navigate("postDetail/$postId") },
                     onCreateSos = { navController.navigate("createSos") },
                     onOpenSos = { sosId -> navController.navigate("sosDetail/$sosId") },
+                    onOpenFilter = { navController.navigate("filter") },
                     navController = navController,
                 )
             }
+            composable("filter") {
+                FilterScreen(
+                    navController = navController,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable("myPage") {
+                MyPageScreen(
+                    onOpenSettings = { navController.navigate("settings") },
+                    onLoggedOut = {
+                        navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                    },
+                    onOpenPost = { postId -> navController.navigate("postDetail/$postId") },
+                    onOpenSos = { sosId -> navController.navigate("sosDetail/$sosId") },
+                )
+            }
             composable("settings") {
-                SettingsScreen(onLoggedOut = {
-                    navController.navigate("login") { popUpTo(0) { inclusive = true } }
-                })
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onLoggedOut = {
+                        navController.navigate("login") { popUpTo(0) { inclusive = true } }
+                    },
+                )
             }
             composable("createPost") {
                 CreatePostScreen(
