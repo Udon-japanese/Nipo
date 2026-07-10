@@ -117,7 +117,9 @@ fun MapPickerScreen(
                       "radius": 40.0
                     }
                   },
-                  "maxResultCount": 1
+                  "maxResultCount": 1,
+                  "languageCode": "ja",
+                  "regionCode": "JP"
                 }
             """.trimIndent()
                 connection.outputStream.use { it.write(body.toByteArray()) }
