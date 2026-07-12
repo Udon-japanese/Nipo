@@ -82,6 +82,7 @@ fun CreateSosScreen(onDone: () -> Unit, editingSosId: String? = null) {
     var imageUri by remember { mutableStateOf<Uri?>(null) }
     var existingPost by remember { mutableStateOf<SosPost?>(null) }
     var isPosting by remember { mutableStateOf(false) }
+    var isShowingAnimation by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(editingSosId) {
@@ -100,189 +101,196 @@ fun CreateSosScreen(onDone: () -> Unit, editingSosId: String? = null) {
     ) { uri -> imageUri = uri }
 
     NipoModeProvider(NipoMode.Sos) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(SosBg)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                SosGradientHeader(title = if (isEditing) "メッセージを編集" else "新規メッセージ", onBack = onDone)
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(SosBg)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    SosGradientHeader(title = if (isEditing) "メッセージを編集" else "新規メッセージ", onBack = onDone)
 
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(start = 14.dp, end = 14.dp, top = 80.dp)
-                        .fillMaxWidth()
-                        .shadow(elevation = 12.dp, shape = RoundedCornerShape(14.dp)),
-                    color = Color.White,
-                    shape = RoundedCornerShape(14.dp),
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("宛先", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = SosGradientStart, modifier = Modifier.width(52.dp))
-                            Text("半径500m以内にいる人", style = MaterialTheme.typography.bodySmall, color = SosGradientEnd)
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(start = 14.dp, end = 14.dp, top = 80.dp)
+                            .fillMaxWidth()
+                            .shadow(elevation = 12.dp, shape = RoundedCornerShape(14.dp)),
+                        color = Color.White,
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("宛先", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = SosGradientStart, modifier = Modifier.width(52.dp))
+                                Text("半径500m以内にいる人", style = MaterialTheme.typography.bodySmall, color = SosGradientEnd)
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("件名", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = SosGradientStart, modifier = Modifier.width(52.dp))
+                                NipoTextField(
+                                    value = title,
+                                    onValueChange = { title = it },
+                                    placeholder = "例：駅前で迷っています",
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
-                        Spacer(Modifier.height(12.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("件名", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = SosGradientStart, modifier = Modifier.width(52.dp))
-                            NipoTextField(
-                                value = title,
-                                onValueChange = { title = it },
-                                placeholder = "例：駅前で迷っています",
-                                modifier = Modifier.weight(1f),
+                    }
+                }
+
+                Column(Modifier.padding(16.dp)) {
+                    if (selectedCategory?.showsEmergencyBanner == true) {
+                        EmergencyBanner()
+                        Spacer(Modifier.height(16.dp))
+                    }
+
+                    Text("タグ（任意）", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = SosGradientStart)
+                    Spacer(Modifier.height(8.dp))
+                    SimpleFlowRow(horizontalGap = 7.dp, verticalGap = 7.dp) {
+                        SosCategory.entries.forEach { category ->
+                            SosTagChip(
+                                category = category,
+                                selected = category == selectedCategory,
+                                onClick = { selectedCategory = if (selectedCategory == category) null else category },
                             )
                         }
                     }
-                }
-            }
-
-            Column(Modifier.padding(16.dp)) {
-                if (selectedCategory?.showsEmergencyBanner == true) {
-                    EmergencyBanner()
                     Spacer(Modifier.height(16.dp))
-                }
 
-                Text("タグ（任意）", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = SosGradientStart)
-                Spacer(Modifier.height(8.dp))
-                SimpleFlowRow(horizontalGap = 7.dp, verticalGap = 7.dp) {
-                    SosCategory.entries.forEach { category ->
-                        SosTagChip(
-                            category = category,
-                            selected = category == selectedCategory,
-                            onClick = { selectedCategory = if (selectedCategory == category) null else category },
+                    Surface(color = Color.White, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("本文", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = SosGradientStart)
+                            Spacer(Modifier.height(8.dp))
+                            NipoTextField(
+                                value = text,
+                                onValueChange = { text = it },
+                                placeholder = "今どんな状況ですか？気軽に書いてください。",
+                                singleLine = false,
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    Text("添付（任意・1枚）", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = SosGradientStart)
+                    if (isEditing && imageUri == null && existingPost?.photoUrl != null) {
+                        Text(
+                            "新しい写真を選ぶと、既存の写真と差し替わります",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SosGradientStart,
                         )
                     }
-                }
-                Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(8.dp))
+                    PhotoSlotGrid(
+                        photoUris = listOfNotNull(imageUri),
+                        maxSlots = 1,
+                        onAddPhoto = { imagePicker.launch("image/*") },
+                        onRemovePhoto = { imageUri = null },
+                    )
 
-                Surface(color = Color.White, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("本文", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = SosGradientStart)
-                        Spacer(Modifier.height(8.dp))
-                        NipoTextField(
-                            value = text,
-                            onValueChange = { text = it },
-                            placeholder = "今どんな状況ですか？気軽に書いてください。",
-                            singleLine = false,
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(sosInfoGradient(), RoundedCornerShape(10.dp))
+                            .border(BorderStroke(1.dp, Color(0xFFCFE0F0)), RoundedCornerShape(10.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = SosGradientEnd)
+                        Text(
+                            "半径500m以内の人に届きます（変更不可）",
+                            color = SosGradientEnd,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(start = 8.dp),
                         )
                     }
-                }
 
-                Spacer(Modifier.height(16.dp))
-                Text("添付（任意・1枚）", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = SosGradientStart)
-                if (isEditing && imageUri == null && existingPost?.photoUrl != null) {
-                    Text(
-                        "新しい写真を選ぶと、既存の写真と差し替わります",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SosGradientStart,
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                PhotoSlotGrid(
-                    photoUris = listOfNotNull(imageUri),
-                    maxSlots = 1,
-                    onAddPhoto = { imagePicker.launch("image/*") },
-                    onRemovePhoto = { imageUri = null },
-                )
-
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(sosInfoGradient(), RoundedCornerShape(10.dp))
-                        .border(BorderStroke(1.dp, Color(0xFFCFE0F0)), RoundedCornerShape(10.dp))
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.LocationOn, contentDescription = null, tint = SosGradientEnd)
-                    Text(
-                        "半径500m以内の人に届きます（変更不可）",
-                        color = SosGradientEnd,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
-
-                Spacer(Modifier.height(24.dp))
-                val canSubmit = title.isNotBlank() && text.isNotBlank() && !isPosting
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = if (canSubmit) sosHeaderGradient() else Brush.linearGradient(listOf(Color(0xFFB9C6D4), Color(0xFFB9C6D4))),
-                            shape = RoundedCornerShape(10.dp),
-                        )
-                        .clickable(enabled = canSubmit) {
-                            isPosting = true
-                            scope.launch {
-                                if (isEditing) {
-                                    val existing = existingPost
-                                    val result = repository.updateSos(
-                                        editingSosId!!,
-                                        SosPost(
-                                            authorUid = existing?.authorUid ?: currentUid,
-                                            location = existing?.location,
-                                            title = title,
-                                            category = selectedCategory?.name ?: "",
-                                            text = text,
-                                            photoUrl = existing?.photoUrl,
-                                            status = existing?.status ?: SosStatus.OPEN.name,
-                                            createdAt = existing?.createdAt,
-                                            closedAt = existing?.closedAt,
-                                        ),
-                                        imageUri,
-                                    )
-                                    isPosting = false
-                                    result.onSuccess {
-                                        onDone()
-                                    }.onFailure {
-                                        errorMessage = it.message
-                                    }
-                                } else {
-                                    val location = try {
-                                        fusedClient.lastLocation.await()
-                                    } catch (_: Exception) {
-                                        null
-                                    }
-                                    if (location == null) {
+                    Spacer(Modifier.height(24.dp))
+                    val canSubmit = title.isNotBlank() && text.isNotBlank() && !isPosting
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                brush = if (canSubmit) sosHeaderGradient() else Brush.linearGradient(listOf(Color(0xFFB9C6D4), Color(0xFFB9C6D4))),
+                                shape = RoundedCornerShape(10.dp),
+                            )
+                            .clickable(enabled = canSubmit) {
+                                isPosting = true
+                                scope.launch {
+                                    if (isEditing) {
+                                        val existing = existingPost
+                                        val result = repository.updateSos(
+                                            editingSosId!!,
+                                            SosPost(
+                                                authorUid = existing?.authorUid ?: currentUid,
+                                                location = existing?.location,
+                                                title = title,
+                                                category = selectedCategory?.name ?: "",
+                                                text = text,
+                                                photoUrl = existing?.photoUrl,
+                                                status = existing?.status ?: SosStatus.OPEN.name,
+                                                createdAt = existing?.createdAt,
+                                                closedAt = existing?.closedAt,
+                                            ),
+                                            imageUri,
+                                        )
                                         isPosting = false
-                                        return@launch
-                                    }
-                                    val geo = GeoUtils.coarsen(location.latitude, location.longitude)
-                                    val result = repository.createSos(
-                                        SosPost(
-                                            authorUid = currentUid,
-                                            location = geo,
-                                            title = title,
-                                            category = selectedCategory?.name ?: "",
-                                            text = text,
-                                        ),
-                                        imageUri,
-                                    )
-                                    isPosting = false
-                                    result.onSuccess {
-                                        onDone()
-                                    }.onFailure {
-                                        errorMessage = it.message
+                                        result.onSuccess {
+                                            onDone()
+                                        }.onFailure {
+                                            errorMessage = it.message
+                                        }
+                                    } else {
+                                        val location = try {
+                                            fusedClient.lastLocation.await()
+                                        } catch (_: Exception) {
+                                            null
+                                        }
+                                        if (location == null) {
+                                            isPosting = false
+                                            return@launch
+                                        }
+                                        val geo = GeoUtils.coarsen(location.latitude, location.longitude)
+                                        val result = repository.createSos(
+                                            SosPost(
+                                                authorUid = currentUid,
+                                                location = geo,
+                                                title = title,
+                                                category = selectedCategory?.name ?: "",
+                                                text = text,
+                                            ),
+                                            imageUri,
+                                        )
+                                        isPosting = false
+                                        result.onSuccess {
+                                            isShowingAnimation = true
+                                        }.onFailure {
+                                            errorMessage = it.message
+                                        }
                                     }
                                 }
                             }
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (isPosting) {
+                            CircularProgressIndicator(modifier = Modifier.height(20.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text(if (isEditing) "更新する" else "SOSを送る", color = Color.White, style = MaterialTheme.typography.labelLarge)
                         }
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (isPosting) {
-                        CircularProgressIndicator(modifier = Modifier.height(20.dp), color = Color.White, strokeWidth = 2.dp)
-                    } else {
-                        Text(if (isEditing) "更新する" else "SOSを送る", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                    }
+                    errorMessage?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text("送信エラー: $it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                errorMessage?.let {
-                    Spacer(Modifier.height(8.dp))
-                    Text("送信エラー: $it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                }
             }
+
+            SosEmailOverlay(
+                visible = isShowingAnimation,
+                onFinished = onDone
+            )
         }
     }
 }
