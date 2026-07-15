@@ -2,7 +2,9 @@ package com.example.nipo.ui.home
 
 import android.Manifest
 import android.annotation.SuppressLint
+import androidx.core.content.edit
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,9 +19,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -62,10 +68,17 @@ import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.libraries.places.api.model.AutocompletePrediction
+import com.google.android.libraries.places.api.model.AutocompleteSessionToken
+import com.google.android.libraries.places.api.model.Place
+import com.google.android.libraries.places.api.net.FetchPlaceRequest
+import com.google.android.libraries.places.api.net.FindAutocompletePredictionsRequest
+import com.google.android.libraries.places.api.net.PlacesClient
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MarkerComposable
 import com.google.maps.android.compose.rememberCameraPositionState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val DefaultCenter = LatLng(35.681236, 139.767125) // 位置情報が取得できない場合のフォールバック(東京駅)
@@ -80,10 +93,10 @@ private fun loadLastLatLng(context: android.content.Context): LatLng? {
 }
 
 private fun saveLastLatLng(context: android.content.Context, latLng: LatLng) {
-    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
-        .putFloat(KEY_LAST_LAT, latLng.latitude.toFloat())
-        .putFloat(KEY_LAST_LNG, latLng.longitude.toFloat())
-        .apply()
+    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit {
+        putFloat(KEY_LAST_LAT, latLng.latitude.toFloat())
+        putFloat(KEY_LAST_LNG, latLng.longitude.toFloat())
+    }
 }
 
 @SuppressLint("MissingPermission")
@@ -96,6 +109,7 @@ fun HomeScreen(
     onOpenSos: (String) -> Unit,
     onOpenFilter: () -> Unit,
     navController: NavHostController,
+    placesClient: PlacesClient,
     viewModel: HomeViewModel = viewModel(),
 ) {
     val posts by viewModel.posts.collectAsState()
@@ -104,6 +118,8 @@ fun HomeScreen(
     val filterSos by viewModel.filterSos.collectAsState()
     val filterTags by viewModel.filterTags.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    var placePredictions by remember { mutableStateOf<List<AutocompletePrediction>>(emptyList()) }
+    var placeSessionToken by remember { mutableStateOf(AutocompleteSessionToken.newInstance()) }
     val context = LocalContext.current
     val fusedClient = remember { LocationServices.getFusedLocationProviderClient(context) }
     val locationPermission = rememberPermissionState(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -179,16 +195,46 @@ fun HomeScreen(
         }
     }
 
-    val visiblePosts = remember(posts, filterTips, filterTags, searchQuery) {
+    val visiblePosts = remember(posts, filterTips, filterTags) {
         if (!filterTips) return@remember emptyList()
         posts.filter { post ->
             val tag = runCatching { PostTag.valueOf(post.label) }.getOrNull()
-            val tagOk = tag == null || tag in filterTags
-            val queryOk = searchQuery.isBlank() ||
-                post.title.contains(searchQuery, ignoreCase = true) ||
-                post.placeName.orEmpty().contains(searchQuery, ignoreCase = true)
-            tagOk && queryOk
+            tag == null || tag in filterTags
         }
+    }
+
+    fun searchPlaces(query: String) {
+        if (query.isBlank()) {
+            placePredictions = emptyList()
+            return
+        }
+        val request = FindAutocompletePredictionsRequest.builder()
+            .setQuery(query)
+            .setCountries("JP")
+            .setSessionToken(placeSessionToken)
+            .build()
+        placesClient.findAutocompletePredictions(request)
+            .addOnSuccessListener { placePredictions = it.autocompletePredictions }
+            .addOnFailureListener { placePredictions = emptyList() }
+    }
+
+    fun selectPlacePrediction(prediction: AutocompletePrediction) {
+        val fields = listOf(Place.Field.LAT_LNG, Place.Field.NAME)
+        val request = FetchPlaceRequest.builder(prediction.placeId, fields)
+            .setSessionToken(placeSessionToken)
+            .build()
+        placesClient.fetchPlace(request)
+            .addOnSuccessListener { response ->
+                response.place.latLng?.let { moveCameraTo(it) }
+                placePredictions = emptyList()
+                searchQuery = ""
+                placeSessionToken = AutocompleteSessionToken.newInstance()
+            }
+    }
+
+    LaunchedEffect(searchQuery) {
+        delay(300)
+        searchPlaces(searchQuery)
     }
 
     Column(Modifier.fillMaxSize().background(NeutralBg)) {
@@ -233,6 +279,31 @@ fun HomeScreen(
                     FilterIcon(tint = NeutralText)
                 }
             }
+        }
+        if (placePredictions.isNotEmpty()) {
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth(),
+                color = Color.White,
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                LazyColumn(Modifier.heightIn(max = 240.dp)) {
+                    items(placePredictions) { prediction ->
+                        Text(
+                            text = prediction.getFullText(null).toString(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = NeutralText,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectPlacePrediction(prediction) }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                        )
+                        HorizontalDivider(color = NeutralBg)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
         }
         Box(
             modifier = Modifier
@@ -283,7 +354,7 @@ fun HomeScreen(
                     .align(Alignment.BottomStart)
                     .padding(16.dp)
                     .size(44.dp),
-                containerColor = androidx.compose.ui.graphics.Color.White,
+                containerColor = Color.White,
                 shape = CircleShape,
             ) {
                 Icon(Icons.Default.LocationOn, contentDescription = "現在地に戻る", tint = MaterialTheme.colorScheme.primary)

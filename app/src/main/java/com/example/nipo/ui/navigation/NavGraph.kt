@@ -108,6 +108,7 @@ fun AppNavGraph(navController: NavHostController) {
                         onOpenSos = { sosId -> navController.navigate("sosDetail/$sosId") },
                         onOpenFilter = { navController.navigate("filter") },
                         navController = navController,
+                        placesClient = placesClient,
                     )
                 }
             }
